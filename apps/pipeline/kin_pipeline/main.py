@@ -1,0 +1,280 @@
+"""Kin voice pipeline FastAPI server.
+
+The browser captures 16 kHz mono PCM and streams it over a WebSocket.
+We fork the audio to Speechmatics Realtime (medical domain) for transcription
+and Thymia Sentinel (wellbeing-awareness policy) for voice biomarkers.
+Results stream back to the browser and are persisted to Supabase."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+from typing import Any
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+
+from speechmatics.rt import AudioEncoding
+from speechmatics.voice import (
+    AgentServerMessageType,
+    SegmentMessage,
+    VoiceAgentClient,
+    VoiceAgentConfig,
+    VoiceAgentConfigPreset,
+)
+from thymia_sentinel import SentinelClient
+
+from .brief import derive_brief
+from .config import settings
+from .supabase_store import (
+    create_checkin,
+    finalize_checkin,
+    save_biomarker_snapshot,
+    upsert_supporter_brief,
+)
+
+log = logging.getLogger("kin.pipeline")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+app = FastAPI(title="Kin voice pipeline")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+async def health() -> dict[str, Any]:
+    s = settings()
+    return {
+        "ok": True,
+        "sample_rate": s.sample_rate,
+        "has_supabase": bool(s.supabase_url and s.supabase_service_role),
+    }
+
+
+class CheckinSession:
+    """One voice check-in: bridges a browser WS to Speechmatics + Sentinel."""
+
+    def __init__(self, ws: WebSocket, circle_id: str, author_id: str, source: str):
+        self.ws = ws
+        self.circle_id = circle_id
+        self.author_id = author_id
+        self.source = source
+        self.cfg = settings()
+
+        self.checkin_id: str | None = None
+        self.started_at = time.time()
+        self.transcript_parts: list[str] = []
+        self.latest_policy: dict[str, Any] | None = None
+
+        self._send_lock = asyncio.Lock()
+
+    async def send_json(self, payload: dict[str, Any]) -> None:
+        async with self._send_lock:
+            try:
+                await self.ws.send_text(json.dumps(payload))
+            except Exception:
+                pass
+
+    async def run(self) -> None:
+        self.checkin_id = create_checkin(
+            circle_id=self.circle_id,
+            author_id=self.author_id,
+            source=self.source,
+        )
+        await self.send_json(
+            {
+                "type": "session.started",
+                "checkin_id": self.checkin_id,
+                "sample_rate": self.cfg.sample_rate,
+            }
+        )
+
+        sentinel = SentinelClient(
+            api_key=self.cfg.thymia_api_key,
+            user_label=f"kin-{self.author_id[:8]}",
+            policies=["wellbeing-awareness"],
+            biomarkers=["helios", "apollo", "psyche"],
+            sample_rate=self.cfg.sample_rate,
+        )
+
+        @sentinel.on_policy_result
+        async def _on_policy(result: dict[str, Any]) -> None:
+            self.latest_policy = result
+            if self.checkin_id:
+                try:
+                    save_biomarker_snapshot(
+                        checkin_id=self.checkin_id,
+                        policy_result=result,
+                        t_offset_ms=int((time.time() - self.started_at) * 1000),
+                    )
+                except Exception as e:
+                    log.warning("save_biomarker_snapshot failed: %s", e)
+            await self.send_json({"type": "biomarker.policy", "result": result})
+
+        @sentinel.on_progress
+        async def _on_progress(progress: dict[str, Any]) -> None:
+            await self.send_json({"type": "biomarker.progress", "progress": progress})
+
+        voice_config = VoiceAgentConfigPreset.ADAPTIVE(
+            VoiceAgentConfig(
+                domain="medical",
+                audio_encoding=AudioEncoding.PCM_S16LE,
+                chunk_size=self.cfg.chunk_size,
+                sample_rate=self.cfg.sample_rate,
+            )
+        )
+
+        try:
+            await sentinel.connect()
+        except Exception as e:
+            log.exception("Sentinel connect failed")
+            await self.send_json({"type": "error", "where": "sentinel", "msg": str(e)})
+            return
+
+        async with VoiceAgentClient(
+            api_key=self.cfg.speechmatics_api_key, config=voice_config
+        ) as sm:
+
+            loop = asyncio.get_running_loop()
+
+            def _format(segments: Any) -> str:
+                return " ".join([s.text for s in segments if getattr(s, "text", None)])
+
+            @sm.on(AgentServerMessageType.ADD_PARTIAL_SEGMENT)
+            def _on_partial(message: Any) -> None:
+                seg = SegmentMessage.from_message(message)
+                text = _format(seg.segments)
+                if text:
+                    asyncio.run_coroutine_threadsafe(
+                        self.send_json({"type": "transcript.partial", "text": text}),
+                        loop,
+                    )
+
+            @sm.on(AgentServerMessageType.ADD_SEGMENT)
+            def _on_final(message: Any) -> None:
+                seg = SegmentMessage.from_message(message)
+                text = _format(seg.segments)
+                if not text:
+                    return
+                self.transcript_parts.append(text)
+                asyncio.run_coroutine_threadsafe(
+                    self.send_json({"type": "transcript.final", "text": text}), loop
+                )
+                asyncio.run_coroutine_threadsafe(
+                    sentinel.send_user_transcript(text, is_final=True), loop
+                )
+
+            await self._pump(sm, sentinel)
+
+        # Give Thymia Sentinel a grace window to emit a policy result after
+        # the final transcript. Without this, short check-ins close before the
+        # biomarker evaluation fires.
+        grace_seconds = 4.0
+        deadline = time.time() + grace_seconds
+        while self.latest_policy is None and time.time() < deadline:
+            await asyncio.sleep(0.1)
+
+        try:
+            await sentinel.close()
+        except Exception:
+            pass
+
+        transcript = " ".join(self.transcript_parts).strip()
+        duration_ms = int((time.time() - self.started_at) * 1000)
+        if self.checkin_id:
+            try:
+                finalize_checkin(
+                    checkin_id=self.checkin_id,
+                    transcript=transcript,
+                    duration_ms=duration_ms,
+                )
+            except Exception as e:
+                log.warning("finalize_checkin failed: %s", e)
+
+            if self.latest_policy and self.source == "patient":
+                try:
+                    brief = derive_brief(self.latest_policy, transcript)
+                    # NOTE: brief target = demo partner's supporter row, best-effort
+                    from .supabase_store import _client
+
+                    c = _client()
+                    if c:
+                        sup = (
+                            c.table("supporters")
+                            .select("id")
+                            .eq("circle_id", self.circle_id)
+                            .limit(1)
+                            .execute()
+                        )
+                        if sup.data:
+                            upsert_supporter_brief(
+                                circle_id=self.circle_id,
+                                supporter_id=sup.data[0]["id"],
+                                headline=brief["headline"],
+                                guidance=brief["guidance"],
+                                tone_cues=brief["tone_cues"],
+                                derived_from=self.checkin_id,
+                            )
+                except Exception as e:
+                    log.warning("brief upsert failed: %s", e)
+
+        await self.send_json(
+            {
+                "type": "session.finished",
+                "checkin_id": self.checkin_id,
+                "transcript": transcript,
+                "duration_ms": duration_ms,
+                "policy_result": self.latest_policy,
+            }
+        )
+
+    async def _pump(self, sm: VoiceAgentClient, sentinel: SentinelClient) -> None:
+        try:
+            while True:
+                msg = await self.ws.receive()
+                if msg.get("type") == "websocket.disconnect":
+                    break
+                if "bytes" in msg and msg["bytes"] is not None:
+                    audio = msg["bytes"]
+                    await asyncio.gather(
+                        sm.send_audio(audio),
+                        sentinel.send_user_audio(audio),
+                    )
+                elif "text" in msg and msg["text"] is not None:
+                    try:
+                        evt = json.loads(msg["text"])
+                    except Exception:
+                        continue
+                    if evt.get("type") == "stop":
+                        break
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            log.exception("pump failed")
+            await self.send_json({"type": "error", "where": "pump", "msg": str(e)})
+
+
+@app.websocket("/ws/checkin")
+async def ws_checkin(ws: WebSocket) -> None:
+    await ws.accept()
+    params = ws.query_params
+    cfg = settings()
+    circle_id = params.get("circle_id") or cfg.demo_circle_id
+    author_id = params.get("author_id") or cfg.demo_patient_id
+    source = params.get("source") or "patient"
+
+    session = CheckinSession(ws, circle_id=circle_id, author_id=author_id, source=source)
+    try:
+        await session.run()
+    finally:
+        try:
+            await ws.close()
+        except Exception:
+            pass

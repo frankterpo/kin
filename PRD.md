@@ -2,7 +2,7 @@
 
 ## The problem
 
-Chronic conditions like Parkinson's, early-stage dementia, long COVID, and serious mental illness are not managed by a patient — they're managed by a network. Partners, adult children, siblings, and close friends all want to help, but they don't know what to do, when to do it, or how the person is actually doing between clinic visits. The patient ends up as the reluctant project manager of their own illness: repeating updates, calibrating who gets told what, and translating how they feel into words that land differently with each listener. Clinicians, meanwhile, see a 20-minute snapshot every three months and miss the trajectory entirely. The result is a support network that loves someone deeply and still shows up inconsistently, and a care pathway that reacts to crises instead of preventing them.
+Chronic conditions like Parkinson's, early-stage dementia, long COVID, anorexia, and serious mental illness are not managed by a patient — they're managed by a network. Partners, adult children, siblings, and close friends all want to help, but they don't know what to do, when to do it, or how the person is actually doing between clinic visits. The patient ends up as the reluctant project manager of their own illness: repeating updates, calibrating who gets told what, and translating how they feel into words that land differently with each listener. Clinicians, meanwhile, see a 20-minute snapshot every three months and miss the trajectory entirely. The result is a support network that loves someone deeply and still shows up inconsistently, and a care pathway that reacts to crises instead of preventing them.
 
 ## The product
 
