@@ -37,7 +37,7 @@ function ArcSvg({ width, height, progress }: { width: number; height: number; pr
 
   const dots = Array.from({ length: 28 }, (_, i) => {
     const x = startX + ((endX - startX) / 27) * i;
-    const y = baseY + 18 + Math.sin((i / 27) * Math.PI) * 24;
+    const y = baseY + 22;
     return { x, y };
   });
 

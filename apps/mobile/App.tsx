@@ -6,11 +6,9 @@ import { ScreenTabs } from './src/components/ScreenTabs';
 import { PatientCheckIn } from './src/screens/PatientCheckIn';
 import { SupporterBrief } from './src/screens/SupporterBrief';
 import { Contribute } from './src/screens/Contribute';
-import { NetworkPulse } from './src/screens/NetworkPulse';
 import { Tracker } from './src/screens/Tracker';
-import { EmotionCapture } from './src/screens/EmotionCapture';
 
-type TabKey = 'home' | 'capture' | 'tracker' | 'contribute' | 'pulse';
+type TabKey = 'home' | 'tracker' | 'contribute';
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('patient');
@@ -21,14 +19,11 @@ export default function App() {
       mode === 'patient'
         ? [
             { key: 'home' as TabKey, label: 'Check-in' },
-            { key: 'capture' as TabKey, label: 'Capture' },
             { key: 'tracker' as TabKey, label: 'Tracker' },
-            { key: 'pulse' as TabKey, label: 'Pulse' },
           ]
         : [
             { key: 'home' as TabKey, label: 'Brief' },
             { key: 'contribute' as TabKey, label: 'Contribute' },
-            { key: 'pulse' as TabKey, label: 'Pulse' },
           ],
     [mode]
   );
@@ -36,10 +31,8 @@ export default function App() {
   const active = tabs.find((t) => t.key === tab) ? tab : (tabs[0].key as TabKey);
 
   const renderScreen = () => {
-    if (active === 'pulse') return <NetworkPulse />;
     if (active === 'contribute') return <Contribute />;
     if (active === 'tracker') return <Tracker />;
-    if (active === 'capture') return <EmotionCapture />;
     return mode === 'patient' ? <PatientCheckIn /> : <SupporterBrief />;
   };
 

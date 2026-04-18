@@ -30,7 +30,6 @@ const styles = StyleSheet.create({
     padding: 3,
     borderWidth: 1,
     borderColor: palette.cardBorder,
-    alignSelf: 'flex-start',
   },
   tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: radius.pill },
   tabOn: { backgroundColor: 'rgba(255,255,255,0.95)' },

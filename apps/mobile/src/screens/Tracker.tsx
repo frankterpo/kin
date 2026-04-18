@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { GestureResponderEvent, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { palette, type } from '../theme';
+import { GestureResponderEvent, ScrollView, StyleSheet, View } from 'react-native';
+import { palette } from '../theme';
 import { GlassCard } from '../components/GlassCard';
 import { HeroNumber } from '../components/HeroNumber';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
@@ -52,8 +52,7 @@ export function Tracker() {
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
-        <Text style={styles.kicker}>TIMELINE · PATIENT</Text>
+      <View style={styles.zoomRow}>
         <ZoomTabs value={zoom} onChange={setZoom} />
       </View>
 
@@ -134,14 +133,7 @@ function TimelineCanvas({
 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-    gap: 10,
-  },
-  kicker: { color: palette.inkMuted, fontSize: 11, letterSpacing: 1.2, fontWeight: '600' },
+  zoomRow: { alignItems: 'center', marginBottom: 8 },
 
   canvasCard: { padding: 14, marginBottom: 6 },
 });
