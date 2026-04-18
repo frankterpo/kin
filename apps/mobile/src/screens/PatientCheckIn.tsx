@@ -6,7 +6,6 @@ import { DotMatrix } from '../components/DotMatrix';
 import { GlassCard } from '../components/GlassCard';
 import { MiniBars } from '../components/MiniBars';
 import { ScatterCloud } from '../components/ScatterCloud';
-import { BottomDock } from '../components/BottomDock';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 
 export function PatientCheckIn() {
@@ -74,7 +73,6 @@ export function PatientCheckIn() {
         </GlassCard>
       </View>
 
-      <BottomDock markerLabel="M" progress={0.52} />
     </View>
   );
 }

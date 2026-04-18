@@ -3,7 +3,7 @@ import { GestureResponderEvent, ScrollView, StyleSheet, Text, View } from 'react
 import Svg, { Circle, Defs, LinearGradient as SvgGradient, Path, Stop } from 'react-native-svg';
 import { palette, type } from '../theme';
 import { GlassCard } from '../components/GlassCard';
-import { BottomDock } from '../components/BottomDock';
+import { HeroNumber } from '../components/HeroNumber';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 
 const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -88,10 +88,15 @@ export function NetworkPulse() {
     <View style={styles.root}>
       <View style={styles.header}>
         <Text style={styles.kicker}>NETWORK PULSE · 7 DAYS</Text>
-        <Text style={styles.h1}>Dad's week</Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+        <HeroNumber
+          value={MOOD[selectedDay]}
+          caption={`Dad · ${DAY_NAMES[selectedDay]}`}
+          sub={`mood · drag the chart to scrub`}
+        />
+
         <GlassCard style={styles.chartCard}>
           <View style={styles.legend}>
             <View style={styles.legendRow}>
@@ -153,13 +158,6 @@ export function NetworkPulse() {
 
         <View style={{ height: 12 }} />
       </ScrollView>
-
-      <BottomDock
-        segments={7}
-        labels={DAYS}
-        value={selectedDay}
-        onChange={setSelectedDay}
-      />
     </View>
   );
 }

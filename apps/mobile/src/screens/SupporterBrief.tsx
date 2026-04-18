@@ -1,24 +1,23 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { palette, radius, type } from '../theme';
+import { palette, radius } from '../theme';
 import { GlassCard } from '../components/GlassCard';
 import { DotMatrix } from '../components/DotMatrix';
-import { BottomDock } from '../components/BottomDock';
+import { HeroNumber } from '../components/HeroNumber';
 
 export function SupporterBrief() {
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.kicker}>TODAY · FOR YOU</Text>
-          <Text style={styles.h1}>Dad</Text>
-        </View>
+        <Text style={styles.kicker}>TODAY · FOR YOU</Text>
         <View style={styles.avatar}>
           <Text style={styles.avatarTxt}>EL</Text>
         </View>
       </View>
 
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        <HeroNumber value={71} caption="Dad" sub="mood today · 12% slower speech" />
+
         <GlassCard style={styles.hero}>
           <Text style={styles.heroLead}>Quiet call tonight</Text>
           <Text style={styles.heroBody}>
@@ -60,8 +59,6 @@ export function SupporterBrief() {
 
         <View style={{ height: 12 }} />
       </ScrollView>
-
-      <BottomDock markerLabel="M" progress={0.38} />
     </View>
   );
 }
@@ -108,9 +105,8 @@ const rowStyles = StyleSheet.create({
 
 const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 20, paddingTop: 16 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   kicker: { color: palette.inkMuted, fontSize: 11, letterSpacing: 1.2, fontWeight: '600' },
-  h1: { ...type.title, color: palette.ink, fontSize: 32, marginTop: 2 },
   avatar: {
     width: 42, height: 42, borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center',

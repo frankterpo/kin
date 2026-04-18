@@ -7,9 +7,9 @@ import { PatientCheckIn } from './src/screens/PatientCheckIn';
 import { SupporterBrief } from './src/screens/SupporterBrief';
 import { Contribute } from './src/screens/Contribute';
 import { NetworkPulse } from './src/screens/NetworkPulse';
-import { palette } from './src/theme';
+import { Tracker } from './src/screens/Tracker';
 
-type TabKey = 'home' | 'contribute' | 'pulse';
+type TabKey = 'home' | 'tracker' | 'contribute' | 'pulse';
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('patient');
@@ -20,6 +20,7 @@ export default function App() {
       mode === 'patient'
         ? [
             { key: 'home' as TabKey, label: 'Check-in' },
+            { key: 'tracker' as TabKey, label: 'Tracker' },
             { key: 'pulse' as TabKey, label: 'Pulse' },
           ]
         : [
@@ -35,6 +36,7 @@ export default function App() {
   const renderScreen = () => {
     if (active === 'pulse') return <NetworkPulse />;
     if (active === 'contribute') return <Contribute />;
+    if (active === 'tracker') return <Tracker />;
     return mode === 'patient' ? <PatientCheckIn /> : <SupporterBrief />;
   };
 
