@@ -41,7 +41,7 @@ export default function DemoPatientPage() {
 
   if (!session) return null;
 
-  const latestCheckin = data.checkins[0];
+  const latestCheckin = data.checkins.find((c) => c.source === "patient");
   const latestBio = data.biomarkers.find(
     (b) => b.checkin_id === latestCheckin?.id,
   );

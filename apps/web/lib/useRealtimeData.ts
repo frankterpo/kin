@@ -65,7 +65,8 @@ export function useRealtimeData(circleId: string | null): {
           .limit(10),
         sb!
           .from("biomarker_snapshots")
-          .select("*")
+          .select("*, checkins!inner(circle_id)")
+          .eq("checkins.circle_id", circleId)
           .order("created_at", { ascending: false })
           .limit(20),
         sb!

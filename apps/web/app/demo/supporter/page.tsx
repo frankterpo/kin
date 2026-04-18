@@ -64,7 +64,7 @@ export default function DemoSupporterPage() {
   if (!session) return null;
 
   const latestBrief = data.briefs[0];
-  const latestCheckin = data.checkins[0];
+  const latestCheckin = data.checkins.find((c) => c.source === "patient");
   const latestBio = data.biomarkers.find(
     (b) => b.checkin_id === latestCheckin?.id,
   );
