@@ -28,9 +28,11 @@ from speechmatics.voice import (
 from thymia_sentinel import SentinelClient
 
 from . import whatsapp
+from .audio_batch import process_voice_note
 from .config import settings
 from .llm import compose_brief
 from .supabase_store import (
+    _client,
     create_checkin,
     finalize_checkin,
     list_circle_recipients,
@@ -61,6 +63,39 @@ async def health() -> dict[str, Any]:
         "sample_rate": s.sample_rate,
         "has_supabase": bool(s.supabase_url and s.supabase_service_role),
         "has_whatsapp": whatsapp.is_configured(),
+    }
+
+
+def _normalize_phone(raw: str) -> str:
+    digits = "".join(c for c in (raw or "") if c.isdigit())
+    return digits
+
+
+@app.get("/api/whoami")
+async def whoami(phone: str = "") -> dict[str, Any]:
+    """Phone-only login lookup for the demo UI.
+
+    Given an E.164-ish phone, returns the profile id + role (patient|supporter)
+    and the circle_id to subscribe to. Returns {ok:false} if unknown.
+    """
+    p = _normalize_phone(phone)
+    if not p:
+        return {"ok": False, "reason": "missing_phone"}
+    profile = profile_by_phone(p)
+    if not profile:
+        return {"ok": False, "reason": "unknown_phone"}
+    cfg = settings()
+    circle_id = cfg.demo_circle_id
+    role = "patient" if profile["id"] == cfg.demo_patient_id else "supporter"
+    return {
+        "ok": True,
+        "profile": {
+            "id": profile["id"],
+            "display_name": profile.get("display_name"),
+            "phone_e164": profile.get("phone_e164"),
+        },
+        "role": role,
+        "circle_id": circle_id,
     }
 
 
@@ -379,34 +414,128 @@ async def whatsapp_events(request: Request) -> dict[str, Any]:
                     "Kin: got it — logged for the circle. 🫶",
                 )
             )
-        elif t in ("audio", "voice"):
+        elif t in ("audio", "voice") and m.get("audio_id"):
             asyncio.create_task(
                 whatsapp.send_text(
                     sender,
-                    "Kin: got your voice note — saved as a circle observation.",
+                    "Kin: got your voice note — processing…",
+                )
+            )
+            role = "patient"
+            if profile_id and cfg.demo_patient_id and profile_id != cfg.demo_patient_id:
+                role = "supporter"
+            author_id = profile_id or cfg.demo_patient_id
+            asyncio.create_task(
+                _handle_inbound_audio(
+                    circle_id=cfg.demo_circle_id,
+                    author_id=author_id,
+                    source=role,
+                    sender=sender,
+                    media_id=m.get("audio_id"),
+                    mime=m.get("mime"),
+                    wa_message_id=m.get("wa_id"),
                 )
             )
     return {"ok": True, "received": len(messages)}
 
 
+async def _handle_inbound_audio(
+    *,
+    circle_id: str,
+    author_id: str,
+    source: str,
+    sender: str,
+    media_id: str,
+    mime: str | None,
+    wa_message_id: str | None,
+) -> None:
+    """Download WA voice note → run pipeline → ack/fanout."""
+    try:
+        fetched = await whatsapp.fetch_media_bytes(media_id)
+        if not fetched:
+            await whatsapp.send_text(sender, "Kin: couldn't fetch that voice note — try again?")
+            return
+        data, real_mime = fetched
+        log.info("wa.inbound audio bytes=%d mime=%s", len(data), real_mime)
+
+        summary = await process_voice_note(
+            circle_id=circle_id,
+            author_id=author_id,
+            source=source,
+            audio_bytes=data,
+            mime=real_mime or mime,
+            wa_message_id=wa_message_id,
+        )
+
+        checkin_id = summary.get("checkin_id")
+        transcript = (summary.get("transcript") or "").strip()
+        if source == "supporter":
+            body = "Kin: observation logged"
+            if transcript:
+                body += f" — “{transcript[:160]}”"
+            await whatsapp.send_text(sender, body)
+        else:
+            brief = summary.get("brief") or {}
+            head = brief.get("headline") or "check-in saved"
+            await whatsapp.send_text(sender, f"Kin: {head} — circle has been briefed.")
+
+        try:
+            log_whatsapp_message(
+                direction="inbound",
+                msg_type="audio",
+                wa_message_id=wa_message_id,
+                from_e164=sender,
+                body=transcript or None,
+                media_id=media_id,
+                media_mime=real_mime or mime,
+                profile_id=author_id if author_id != settings().demo_patient_id or source == "patient" else None,
+                circle_id=circle_id,
+                checkin_id=checkin_id,
+                payload={"processed": True, "source": source},
+            )
+        except Exception as e:
+            log.warning("wa.log processed audio fail: %s", e)
+    except Exception:
+        log.exception("inbound audio processing failed")
+        try:
+            await whatsapp.send_text(
+                sender, "Kin: something went wrong processing that voice note."
+            )
+        except Exception:
+            pass
+
+
 @app.post("/whatsapp/fanout_demo")
 async def whatsapp_fanout_demo(body: dict[str, Any]) -> dict[str, Any]:
-    """Manual fanout for rehearsal: POST {message, circle_id?}."""
+    """Manual fanout for rehearsal.
+
+    POST {message?, circle_id?, template?, language?}
+    If `template` is provided, sends a template (required for first-contact / outside 24h window).
+    Otherwise sends a free-form text (only works inside an open 24h window).
+    """
     if not whatsapp.is_configured():
         return {"ok": False, "reason": "whatsapp_not_configured"}
     cfg = settings()
     circle_id = body.get("circle_id") or cfg.demo_circle_id
+    template = body.get("template")
+    language = body.get("language") or "en_US"
     text = (body.get("message") or "Kin: hello from the hackathon demo.").strip()
     recipients = list_circle_recipients(circle_id)
     sent: list[dict[str, Any]] = []
     for r in recipients:
-        mid = await whatsapp.send_text(r["phone_e164"], text)
+        if template:
+            mid = await whatsapp.send_template(r["phone_e164"], name=template, language=language)
+            log_body = f"[template:{template}]"
+        else:
+            mid = await whatsapp.send_text(r["phone_e164"], text)
+            log_body = text
+        msg_type = "text"  # enum is {text,audio}; template logged as text
         log_whatsapp_message(
             direction="outbound",
-            msg_type="text",
+            msg_type=msg_type,
             wa_message_id=mid,
             to_e164=r["phone_e164"],
-            body=text,
+            body=log_body,
             profile_id=r["profile_id"],
             circle_id=circle_id,
         )

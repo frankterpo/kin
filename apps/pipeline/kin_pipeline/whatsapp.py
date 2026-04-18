@@ -121,6 +121,39 @@ async def fanout_text(recipients: Iterable[str], body: str) -> list[tuple[str, O
     return out
 
 
+async def send_template(
+    to_e164: str,
+    name: str = "hello_world",
+    language: str = "en_US",
+    components: list[dict[str, Any]] | None = None,
+) -> Optional[str]:
+    """Send a pre-approved template message. Required for first-contact / 24h window reopen."""
+    token, pnid, ver = _cfg()
+    url = f"{GRAPH}/{ver}/{pnid}/messages"
+    tpl: dict[str, Any] = {
+        "name": name,
+        "language": {"code": language},
+    }
+    if components:
+        tpl["components"] = components
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to_e164.lstrip("+"),
+        "type": "template",
+        "template": tpl,
+    }
+    async with httpx.AsyncClient(timeout=15.0) as c:
+        r = await c.post(url, headers=_auth_headers(token), json=payload)
+    if r.status_code >= 300:
+        log.error("wa.send_template fail %s %s", r.status_code, r.text)
+        return None
+    data = r.json()
+    msg_id = (data.get("messages") or [{}])[0].get("id")
+    log.info("wa.send_template ok to=%s name=%s id=%s", to_e164, name, msg_id)
+    return msg_id
+
+
 # ---------------------------------------------------------------------------
 # Inbound — media download
 # ---------------------------------------------------------------------------
