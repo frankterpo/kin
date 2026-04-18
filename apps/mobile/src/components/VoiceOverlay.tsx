@@ -40,31 +40,8 @@ const TRANSCRIPTS: Result[] = [
   { transcript: 'Hands a bit stiff, mood is fine. Read the paper.', score: 73 },
 ];
 
-// Fire-and-forget TTS. Returns a cleanup that cancels speech.
-// The component does NOT depend on this for phase progression — a parallel
-// timer always advances the phase so the demo flow runs even if the browser
-// silently blocks audio (autoplay policies, muted device, no voices loaded).
-function speak(text: string): () => void {
-  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-    return () => {};
-  }
-  try {
-    const w = window as any;
-    // Warm voices on first call
-    try { w.speechSynthesis.getVoices(); } catch {}
-    const utter = new w.SpeechSynthesisUtterance(text);
-    utter.rate = 1.0;
-    utter.pitch = 1.0;
-    utter.volume = 1.0;
-    w.speechSynthesis.cancel();
-    w.speechSynthesis.speak(utter);
-    return () => {
-      try { w.speechSynthesis.cancel(); } catch {}
-    };
-  } catch {
-    return () => {};
-  }
-}
+// TTS lives in App.tsx so it runs in the user-gesture chain. This component
+// is purely the visual side of the capture.
 
 export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Props) {
   const { width, height } = useWindowDimensions();
@@ -85,17 +62,13 @@ export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Prop
     }
   }, [visible, duration]);
 
-  // Phase: speaking — fire TTS in parallel; advance on a fixed timer so the
-  // flow continues even if speech is blocked.
+  // Phase: speaking — fixed-time read window so the visual matches the TTS
+  // duration. App.tsx fired the speech synchronously in the gesture handler.
   useEffect(() => {
     if (!visible || phase !== 'speaking') return;
-    const cancelSpeech = speak(prompt);
-    const ms = Math.max(2200, prompt.length * 60);
+    const ms = Math.max(2400, prompt.length * 65);
     const id = setTimeout(() => setPhase('listening'), ms);
-    return () => {
-      cancelSpeech();
-      clearTimeout(id);
-    };
+    return () => clearTimeout(id);
   }, [visible, phase, prompt]);
 
   // Phase: listening — countdown 15s
@@ -178,11 +151,15 @@ export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Prop
   };
 
   const handleBackdrop = () => {
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in (window as any)) {
       try { (window as any).speechSynthesis.cancel(); } catch {}
     }
     onDismiss();
   };
+
+  // Reveal Speechmatics chip first (~400ms in), Thymia chip second (~900ms in)
+  const showSpeechmaticsChip = phase === 'transcribing' || phase === 'done';
+  const showThymiaChip = phase === 'done' || (phase === 'transcribing');
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleBackdrop}>
@@ -223,15 +200,32 @@ export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Prop
           </Svg>
         </Pressable>
 
-        {/* Bottom: status / transcript / sub */}
+        {/* Bottom: status / transcript / sub + processing handoff chips */}
         <View pointerEvents="none" style={styles.bottomZone}>
           {phase === 'transcribing' ? (
-            <Text style={styles.lead}>thinking…</Text>
+            <Text style={styles.lead}>analysing your voice…</Text>
           ) : null}
           {phase === 'done' && transcript ? (
             <Text style={styles.lead} numberOfLines={3}>"{transcript}"</Text>
           ) : null}
           <Text style={styles.sub}>{phaseSub(phase)}</Text>
+
+          {(phase === 'transcribing' || phase === 'done') ? (
+            <View style={styles.handoffRow}>
+              <ProcessingChip
+                label="Speechmatics"
+                detail="transcript"
+                done={phase === 'done'}
+                shown={showSpeechmaticsChip}
+              />
+              <ProcessingChip
+                label="Thymia"
+                detail="biomarkers"
+                done={phase === 'done'}
+                shown={showThymiaChip}
+              />
+            </View>
+          ) : null}
         </View>
 
         <Pressable style={styles.cancelBar} onPress={handleBackdrop} hitSlop={12}>
@@ -239,6 +233,28 @@ export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Prop
         </Pressable>
       </View>
     </Modal>
+  );
+}
+
+function ProcessingChip({
+  label,
+  detail,
+  done,
+  shown,
+}: {
+  label: string;
+  detail: string;
+  done: boolean;
+  shown: boolean;
+}) {
+  return (
+    <View style={[styles.chip, !shown && { opacity: 0 }]}>
+      <View style={[styles.chipDot, done && styles.chipDotDone]} />
+      <View>
+        <Text style={styles.chipLabel}>{label}</Text>
+        <Text style={styles.chipDetail}>{done ? `✓ ${detail}` : `${detail}…`}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -331,4 +347,41 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.16)',
   },
   cancelLbl: { color: palette.ink, fontSize: 13, fontWeight: '600', letterSpacing: 0.4 },
+
+  handoffRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+    justifyContent: 'center',
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  chipDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+  },
+  chipDotDone: { backgroundColor: palette.accent },
+  chipLabel: {
+    color: palette.ink,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  chipDetail: {
+    color: palette.inkDim,
+    fontSize: 10,
+    letterSpacing: 0.3,
+    marginTop: 1,
+  },
 });

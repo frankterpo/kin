@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet, View } from 'react-native';
 import { Background } from './src/components/Background';
 import { ModeToggle, Mode } from './src/components/ModeToggle';
@@ -19,11 +19,45 @@ import {
 type TabKey = 'home' | 'tracker';
 type CaptureStep = 'idle' | 'voice' | 'emotion';
 
+// Browsers silently block speechSynthesis.speak() unless the call happens
+// inside the user-gesture chain. So the speak invocation lives at the App
+// level (in the mic press handler) — NOT inside the modal's useEffect.
+function speakInGesture(text: string) {
+  if (typeof window === 'undefined' || !('speechSynthesis' in (window as any))) return;
+  try {
+    const w = window as any;
+    // Cancel any queued speech
+    w.speechSynthesis.cancel();
+    // Warm voices (Chrome lazy-loads them on first call)
+    try { w.speechSynthesis.getVoices(); } catch {}
+    const utter = new w.SpeechSynthesisUtterance(text);
+    utter.rate = 1.0;
+    utter.pitch = 1.0;
+    utter.volume = 1.0;
+    w.speechSynthesis.speak(utter);
+  } catch {}
+}
+
+function primeSpeechEngine() {
+  if (typeof window === 'undefined' || !('speechSynthesis' in (window as any))) return;
+  try {
+    const w = window as any;
+    w.speechSynthesis.getVoices();
+    // A silent zero-volume utterance can wake the engine on Chrome.
+    const u = new w.SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    w.speechSynthesis.speak(u);
+  } catch {}
+}
+
 export default function App() {
   const [mode, setMode] = useState<Mode>('patient');
   const [tab, setTab] = useState<TabKey>('home');
   const [captureStep, setCaptureStep] = useState<CaptureStep>('idle');
   const pendingCheckinIdRef = useRef<string | null>(null);
+
+  // Prime the TTS engine once at app start.
+  useEffect(() => { primeSpeechEngine(); }, []);
 
   const tabs = useMemo(
     () =>
@@ -55,11 +89,19 @@ export default function App() {
     : "In one word — what fits Dad's state?";
 
   const startCapture = () => {
+    // Synchronous TTS — must run in the click handler for browser autoplay rules.
+    speakInGesture(voicePrompt);
     pendingCheckinIdRef.current = null;
     setCaptureStep('voice');
   };
 
+  const cancelSpeech = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in (window as any))) return;
+    try { (window as any).speechSynthesis.cancel(); } catch {}
+  };
+
   const handleVoiceDone = async (result?: { transcript: string; score: number }) => {
+    cancelSpeech();
     if (!result) {
       setCaptureStep('idle');
       return;
