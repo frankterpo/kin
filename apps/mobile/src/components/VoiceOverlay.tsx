@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Line } from 'react-native-svg';
 import { palette } from '../theme';
 
 const EYE_OPEN: number[][] = [
@@ -175,7 +175,7 @@ export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Prop
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleBackdrop}>
-      <Pressable style={[styles.root, { width, height }]} onPress={handleBackdrop}>
+      <View style={[styles.root, { width, height }]}>
         <Svg width={width} height={height} style={StyleSheet.absoluteFill}>
           {Array.from({ length: rows }).map((_, r) =>
             Array.from({ length: cols }).map((_, c) => {
@@ -196,14 +196,24 @@ export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Prop
           )}
         </Svg>
 
-        <View pointerEvents="none" style={styles.kicker}>
+        {/* Top: kicker + prominent prompt text */}
+        <View pointerEvents="none" style={styles.topZone}>
           <Text style={styles.kickerLbl}>{phaseKicker(phase, secsLeft)}</Text>
+          {phase === 'speaking' || phase === 'listening' ? (
+            <Text style={styles.prompt} numberOfLines={4}>{prompt}</Text>
+          ) : null}
         </View>
 
-        <View pointerEvents="none" style={styles.label}>
-          {phase === 'speaking' || phase === 'listening' ? (
-            <Text style={styles.lead} numberOfLines={3}>"{prompt}"</Text>
-          ) : null}
+        {/* Cancel × top-right */}
+        <Pressable style={styles.cancelBtn} onPress={handleBackdrop} hitSlop={12}>
+          <Svg width={16} height={16} viewBox="0 0 16 16">
+            <Line x1="3" y1="3" x2="13" y2="13" stroke={palette.ink} strokeWidth={1.6} strokeLinecap="round" />
+            <Line x1="13" y1="3" x2="3" y2="13" stroke={palette.ink} strokeWidth={1.6} strokeLinecap="round" />
+          </Svg>
+        </Pressable>
+
+        {/* Bottom: status / transcript / sub */}
+        <View pointerEvents="none" style={styles.bottomZone}>
           {phase === 'transcribing' ? (
             <Text style={styles.lead}>thinking…</Text>
           ) : null}
@@ -212,7 +222,11 @@ export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Prop
           ) : null}
           <Text style={styles.sub}>{phaseSub(phase)}</Text>
         </View>
-      </Pressable>
+
+        <Pressable style={styles.cancelBar} onPress={handleBackdrop} hitSlop={12}>
+          <Text style={styles.cancelLbl}>Cancel</Text>
+        </Pressable>
+      </View>
     </Modal>
   );
 }
@@ -228,21 +242,22 @@ function phaseKicker(phase: Phase, secsLeft: number) {
 
 function phaseSub(phase: Phase) {
   switch (phase) {
-    case 'speaking': return 'wait for the prompt';
-    case 'listening': return 'speak naturally · tap anywhere to stop';
-    case 'transcribing': return 'biomarkers updating…';
-    case 'done': return 'score updated · closing';
+    case 'speaking': return 'read the question · then answer';
+    case 'listening': return 'speak naturally · 15 seconds';
+    case 'transcribing': return 'analysing your voice…';
+    case 'done': return 'one more thing · pick a word';
   }
 }
 
 const styles = StyleSheet.create({
   root: { backgroundColor: '#0c0306' },
-  kicker: {
+  topZone: {
     position: 'absolute',
     top: 56,
-    left: 0,
-    right: 0,
+    left: 24,
+    right: 24,
     alignItems: 'center',
+    gap: 14,
   },
   kickerLbl: {
     color: palette.accent,
@@ -250,9 +265,17 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     fontWeight: '700',
   },
-  label: {
+  prompt: {
+    color: palette.ink,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    textAlign: 'center',
+    lineHeight: 28,
+  },
+  bottomZone: {
     position: 'absolute',
-    bottom: 56,
+    bottom: 86,
     left: 24,
     right: 24,
     alignItems: 'center',
@@ -272,4 +295,29 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textAlign: 'center',
   },
+  cancelBtn: {
+    position: 'absolute',
+    top: 52,
+    right: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  cancelBar: {
+    position: 'absolute',
+    bottom: 18,
+    alignSelf: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  cancelLbl: { color: palette.ink, fontSize: 13, fontWeight: '600', letterSpacing: 0.4 },
 });

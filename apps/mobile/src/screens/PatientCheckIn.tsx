@@ -1,18 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 import { palette, radius, type } from '../theme';
 import { ArcTrack } from '../components/ArcTrack';
 import { DotMatrix } from '../components/DotMatrix';
 import { GlassCard } from '../components/GlassCard';
 import { EmotionSheet } from '../components/EmotionSheet';
-import { VoiceOverlay } from '../components/VoiceOverlay';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import { DAY_WINDOW, PLACE_COLORS, PLACE_LABEL, Place } from '../data/tracker';
 import {
   currentCircleId,
   currentPatientId,
-  insertCheckinStub,
   insertSelfReportTag,
 } from '../data/queries';
 import { useHeroScore } from '../hooks/useHeroScore';
@@ -27,11 +25,8 @@ export function PatientCheckIn() {
   const heroFit = heroW > 0 ? Math.min(heroW * 0.45, 220) : undefined;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [captured, setCaptured] = useState<string | null>(null);
-  const [voiceActive, setVoiceActive] = useState(false);
-  const [lastTranscript, setLastTranscript] = useState<string | null>(null);
-  const [lastScore, setLastScore] = useState<number | null>(null);
   const heroScore = useHeroScore();
-  const displayScore = lastScore ?? heroScore.value;
+  const displayScore = heroScore.value;
 
   return (
     <ScrollView
@@ -50,9 +45,7 @@ export function PatientCheckIn() {
       </View>
       <View style={styles.heroSub}>
         <Text style={styles.heroTitle}>Sat</Text>
-        <Text style={styles.heroCity}>
-          {lastTranscript ? `"${lastTranscript}"` : 'Steady · since Wed'}
-        </Text>
+        <Text style={styles.heroCity}>Steady · since Wed</Text>
       </View>
 
       <View style={styles.tagRow}>
@@ -63,13 +56,6 @@ export function PatientCheckIn() {
           <Text style={[styles.tagLbl, captured && styles.tagLblOn]}>
             {captured ? `Tagged · ${captured}` : '+  Tag this moment'}
           </Text>
-        </Pressable>
-        <Pressable
-          style={[styles.voiceBtn, voiceActive && styles.voiceBtnOn]}
-          onPress={() => setVoiceActive((v) => !v)}
-          hitSlop={8}
-        >
-          <MicGlyph active={voiceActive} />
         </Pressable>
       </View>
 
@@ -123,41 +109,7 @@ export function PatientCheckIn() {
         }}
       />
 
-      <VoiceOverlay
-        visible={voiceActive}
-        prompt="Morning Margaret — how's today?"
-        onDismiss={(result) => {
-          if (result) {
-            setLastTranscript(result.transcript);
-            setLastScore(result.score);
-            insertCheckinStub({
-              authorId: currentPatientId(),
-              source: 'patient',
-              transcript: result.transcript,
-              durationMs: 15000,
-            }).catch(() => {});
-          }
-          setVoiceActive(false);
-        }}
-      />
     </ScrollView>
-  );
-}
-
-function MicGlyph({ active }: { active: boolean }) {
-  const color = active ? '#1a0509' : palette.ink;
-  return (
-    <Svg width={18} height={18} viewBox="0 0 18 18">
-      <Rect x="6" y="2" width="6" height="9" rx="3" fill={color} />
-      <Path
-        d="M 3.5 9 Q 3.5 14 9 14 Q 14.5 14 14.5 9"
-        stroke={color}
-        strokeWidth={1.4}
-        fill="none"
-        strokeLinecap="round"
-      />
-      <Line x1={9} y1={14} x2={9} y2={16.5} stroke={color} strokeWidth={1.4} strokeLinecap="round" />
-    </Svg>
   );
 }
 

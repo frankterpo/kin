@@ -1,25 +1,21 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Line, Path, Rect } from 'react-native-svg';
 import { palette, radius } from '../theme';
 import { GlassCard } from '../components/GlassCard';
 import { DotMatrix } from '../components/DotMatrix';
 import { HeroNumber } from '../components/HeroNumber';
 import { EmotionSheet } from '../components/EmotionSheet';
-import { VoiceOverlay } from '../components/VoiceOverlay';
 import { useSupporterBrief } from '../hooks/useSupporterBrief';
 import {
   currentCircleId,
   currentPatientId,
   currentSupporterProfileId,
-  insertCheckinStub,
   insertSelfReportTag,
 } from '../data/queries';
 
 export function SupporterBrief() {
   const { brief, loading } = useSupporterBrief();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [voiceActive, setVoiceActive] = useState(false);
   const [observed, setObserved] = useState<string | null>(null);
 
   const headline = brief?.headline ?? 'Quiet call tonight';
@@ -94,13 +90,6 @@ export function SupporterBrief() {
               {observed ? `Observation · ${observed}` : '+  Drop an observation'}
             </Text>
           </Pressable>
-          <Pressable
-            style={[styles.voiceBtn, voiceActive && styles.voiceBtnOn]}
-            onPress={() => setVoiceActive(true)}
-            hitSlop={8}
-          >
-            <MicGlyph active={voiceActive} />
-          </Pressable>
         </View>
 
         <View style={{ height: 16 }} />
@@ -125,22 +114,6 @@ export function SupporterBrief() {
         }}
       />
 
-      <VoiceOverlay
-        visible={voiceActive}
-        prompt="Hey Elena — how does Dad seem to you today?"
-        onDismiss={(result) => {
-          if (result) {
-            insertCheckinStub({
-              authorId: currentSupporterProfileId(),
-              source: 'supporter',
-              transcript: result.transcript,
-              durationMs: 15000,
-              visibility: 'circle',
-            }).catch(() => {});
-          }
-          setVoiceActive(false);
-        }}
-      />
     </View>
   );
 }
@@ -151,23 +124,6 @@ function ProvenanceChip({ label, small }: { label: string; small?: boolean }) {
       <View style={styles.provDot} />
       <Text style={styles.provLbl}>{label}</Text>
     </View>
-  );
-}
-
-function MicGlyph({ active }: { active: boolean }) {
-  const color = active ? '#1a0509' : palette.ink;
-  return (
-    <Svg width={18} height={18} viewBox="0 0 18 18">
-      <Rect x="6" y="2" width="6" height="9" rx="3" fill={color} />
-      <Path
-        d="M 3.5 9 Q 3.5 14 9 14 Q 14.5 14 14.5 9"
-        stroke={color}
-        strokeWidth={1.4}
-        fill="none"
-        strokeLinecap="round"
-      />
-      <Line x1={9} y1={14} x2={9} y2={16.5} stroke={color} strokeWidth={1.4} strokeLinecap="round" />
-    </Svg>
   );
 }
 
@@ -243,15 +199,4 @@ const styles = StyleSheet.create({
   },
   observeLbl: { color: palette.ink, fontSize: 13, fontWeight: '600', letterSpacing: 0.4 },
   observeLblOn: { color: palette.accent },
-  voiceBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1,
-    borderColor: palette.cardBorder,
-  },
-  voiceBtnOn: { backgroundColor: palette.accent, borderColor: palette.accent },
 });
