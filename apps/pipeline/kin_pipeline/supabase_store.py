@@ -20,6 +20,7 @@ def create_checkin(
     circle_id: str,
     author_id: str,
     source: str = "patient",
+    visibility: str = "circle",
 ) -> Optional[str]:
     client = _client()
     if not client:
@@ -31,6 +32,7 @@ def create_checkin(
                 "circle_id": circle_id,
                 "author_id": author_id,
                 "source": source,
+                "visibility": visibility,
                 "started_at": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -64,6 +66,7 @@ def save_biomarker_snapshot(
     checkin_id: str,
     policy_result: dict[str, Any],
     t_offset_ms: int = 0,
+    visibility: str = "circle",
 ) -> None:
     client = _client()
     if not client:
@@ -76,11 +79,149 @@ def save_biomarker_snapshot(
         {
             "checkin_id": checkin_id,
             "t_offset_ms": t_offset_ms,
+            "visibility": visibility,
             "helios": bio.get("helios"),
             "apollo": bio.get("apollo"),
             "psyche": bio.get("psyche"),
             "policy_result": policy_result,
             "concordance": r.get("concordance_analysis"),
+        }
+    ).execute()
+
+
+def create_self_report_tag(
+    *,
+    circle_id: str,
+    author_id: str,
+    subject_id: str,
+    emotion: str,
+    valence: float,
+    arousal: float,
+    checkin_id: str | None = None,
+    visibility: str = "private",
+) -> Optional[str]:
+    """Persist a 16x8 EmotionGrid commit. Defaults to private visibility."""
+    client = _client()
+    if not client:
+        return None
+    res = (
+        client.table("self_report_tags")
+        .insert(
+            {
+                "circle_id": circle_id,
+                "author_id": author_id,
+                "subject_id": subject_id,
+                "checkin_id": checkin_id,
+                "emotion": emotion,
+                "valence": valence,
+                "arousal": arousal,
+                "visibility": visibility,
+            }
+        )
+        .execute()
+    )
+    if res.data:
+        return res.data[0]["id"]
+    return None
+
+
+def insert_sleep_log(
+    *,
+    profile_id: str,
+    night_of: str,
+    duration_minutes: int,
+    delta_baseline_minutes: int | None = None,
+    source: str = "manual",
+    visibility: str = "circle",
+) -> None:
+    client = _client()
+    if not client:
+        return
+    client.table("sleep_logs").upsert(
+        {
+            "profile_id": profile_id,
+            "source": source,
+            "night_of": night_of,
+            "duration_minutes": duration_minutes,
+            "delta_baseline_minutes": delta_baseline_minutes,
+            "visibility": visibility,
+        },
+        on_conflict="profile_id,night_of",
+    ).execute()
+
+
+def insert_heart_sample(
+    *,
+    profile_id: str,
+    bucket_at: str,
+    bpm_min: int | None = None,
+    bpm_max: int | None = None,
+    bpm_avg: int | None = None,
+    source: str = "manual",
+    visibility: str = "circle",
+) -> None:
+    client = _client()
+    if not client:
+        return
+    client.table("heart_samples").insert(
+        {
+            "profile_id": profile_id,
+            "source": source,
+            "bucket_at": bucket_at,
+            "bpm_min": bpm_min,
+            "bpm_max": bpm_max,
+            "bpm_avg": bpm_avg,
+            "visibility": visibility,
+        }
+    ).execute()
+
+
+def insert_place_visit(
+    *,
+    profile_id: str,
+    place_label: str,
+    started_at: str,
+    ended_at: str | None = None,
+    place_name: str | None = None,
+    source: str = "manual",
+    visibility: str = "circle",
+) -> None:
+    client = _client()
+    if not client:
+        return
+    client.table("place_visits").insert(
+        {
+            "profile_id": profile_id,
+            "source": source,
+            "place_label": place_label,
+            "place_name": place_name,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "visibility": visibility,
+        }
+    ).execute()
+
+
+def insert_app_session(
+    *,
+    profile_id: str,
+    app_name: str,
+    bucket_on: str,
+    duration_minutes: int,
+    source: str = "manual",
+    visibility: str = "private",
+) -> None:
+    client = _client()
+    if not client:
+        return
+    client.table("app_sessions").insert(
+        {
+            "profile_id": profile_id,
+            "source": source,
+            "app_name": app_name,
+            "bucket_on": bucket_on,
+            "duration_minutes": duration_minutes,
+            "visibility": visibility,
         }
     ).execute()
 

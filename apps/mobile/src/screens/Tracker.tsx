@@ -7,6 +7,7 @@ import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import { ZoomTabs, Zoom } from '../components/tracker/ZoomTabs';
 import {
   AppRow,
+  ConcordanceLane,
   HeartLane,
   LaneHeader,
   PlaceLane,
@@ -101,19 +102,30 @@ function TimelineCanvas({
       <TimeRuler width={width} mode={window.zoom} hours={window.hours} />
       <View style={{ height: 8 }} />
 
-      <LaneHeader label="PLACE" />
-      <PlaceLane width={width} segments={window.places} hours={window.hours} showLabels={showPlaceLabels} />
+      {/* Group A — third-party integrations (faded) */}
+      <View style={{ opacity: 0.65 }}>
+        <LaneHeader label="VIA INTEGRATIONS" hint="HealthKit · screen time" />
 
-      <LaneHeader label="APPS" hint={`${window.apps.length} apps`} />
-      {window.apps.map((app) => (
-        <AppRow key={app.name} width={width} app={app} />
-      ))}
+        <LaneHeader label="PLACE" />
+        <PlaceLane width={width} segments={window.places} hours={window.hours} showLabels={showPlaceLabels} />
 
-      <LaneHeader label="HEART" hint={`${window.heartRange[0]}–${window.heartRange[1]} bpm`} />
-      <HeartLane width={width} values={window.heart} range={window.heartRange} />
+        <LaneHeader label="APPS" hint={`${window.apps.length} apps · private`} />
+        {window.apps.map((app) => (
+          <AppRow key={app.name} width={width} app={app} />
+        ))}
 
-      <LaneHeader label="VOICE BIOMARKERS" hint="Kin check-ins" />
+        <LaneHeader label="HEART" hint={`${window.heartRange[0]}–${window.heartRange[1]} bpm`} />
+        <HeartLane width={width} values={window.heart} range={window.heartRange} />
+      </View>
+
+      {/* Group B — DB-native Kin signal */}
+      <LaneHeader label="KIN SIGNAL" hint="voice biomarkers · concordance" />
+
+      <LaneHeader label="VOICE BIOMARKERS" hint="● patient  ○ supporter" />
       <VoiceLane width={width} checkins={window.checkins} hours={window.hours} />
+
+      <LaneHeader label="CONCORDANCE" hint="aligned · mild · gap" />
+      <ConcordanceLane width={width} checkins={window.checkins} hours={window.hours} />
 
       <View
         pointerEvents="none"

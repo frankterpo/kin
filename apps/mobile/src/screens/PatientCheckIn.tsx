@@ -9,6 +9,13 @@ import { EmotionSheet } from '../components/EmotionSheet';
 import { VoiceOverlay } from '../components/VoiceOverlay';
 import { useMeasuredWidth } from '../hooks/useMeasuredWidth';
 import { DAY_WINDOW, PLACE_COLORS, PLACE_LABEL, Place } from '../data/tracker';
+import {
+  currentCircleId,
+  currentPatientId,
+  insertCheckinStub,
+  insertSelfReportTag,
+} from '../data/queries';
+import { useHeroScore } from '../hooks/useHeroScore';
 
 const SLEEP = {
   display: '5:12',
@@ -21,6 +28,10 @@ export function PatientCheckIn() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [captured, setCaptured] = useState<string | null>(null);
   const [voiceActive, setVoiceActive] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState<string | null>(null);
+  const [lastScore, setLastScore] = useState<number | null>(null);
+  const heroScore = useHeroScore();
+  const displayScore = lastScore ?? heroScore.value;
 
   return (
     <ScrollView
@@ -34,12 +45,14 @@ export function PatientCheckIn() {
       </View>
 
       <View style={styles.hero} onLayout={heroOnLayout}>
-        {heroFit ? <DotMatrix value="82" fitToWidth={heroFit} /> : null}
+        {heroFit ? <DotMatrix value={String(displayScore)} fitToWidth={heroFit} /> : null}
         <Text style={styles.degree}>°</Text>
       </View>
       <View style={styles.heroSub}>
         <Text style={styles.heroTitle}>Sat</Text>
-        <Text style={styles.heroCity}>Steady · since Wed</Text>
+        <Text style={styles.heroCity}>
+          {lastTranscript ? `"${lastTranscript}"` : 'Steady · since Wed'}
+        </Text>
       </View>
 
       <View style={styles.tagRow}>
@@ -93,15 +106,40 @@ export function PatientCheckIn() {
 
       <EmotionSheet
         visible={sheetOpen}
-        question="What word fits 82?"
+        question={`What word fits ${displayScore}?`}
         onCancel={() => setSheetOpen(false)}
         onCommit={(emotion) => {
           setCaptured(emotion);
           setSheetOpen(false);
+          insertSelfReportTag({
+            circleId: currentCircleId(),
+            authorId: currentPatientId(),
+            subjectId: currentPatientId(),
+            emotion,
+            valence: 0,
+            arousal: 0,
+            visibility: 'private',
+          }).catch(() => {});
         }}
       />
 
-      <VoiceOverlay visible={voiceActive} onClose={() => setVoiceActive(false)} />
+      <VoiceOverlay
+        visible={voiceActive}
+        prompt="Morning Margaret — how's today?"
+        onDismiss={(result) => {
+          if (result) {
+            setLastTranscript(result.transcript);
+            setLastScore(result.score);
+            insertCheckinStub({
+              authorId: currentPatientId(),
+              source: 'patient',
+              transcript: result.transcript,
+              durationMs: 15000,
+            }).catch(() => {});
+          }
+          setVoiceActive(false);
+        }}
+      />
     </ScrollView>
   );
 }

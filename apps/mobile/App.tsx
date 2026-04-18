@@ -5,10 +5,9 @@ import { ModeToggle, Mode } from './src/components/ModeToggle';
 import { ScreenTabs } from './src/components/ScreenTabs';
 import { PatientCheckIn } from './src/screens/PatientCheckIn';
 import { SupporterBrief } from './src/screens/SupporterBrief';
-import { Contribute } from './src/screens/Contribute';
 import { Tracker } from './src/screens/Tracker';
 
-type TabKey = 'home' | 'tracker' | 'contribute';
+type TabKey = 'home' | 'tracker';
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('patient');
@@ -23,7 +22,7 @@ export default function App() {
           ]
         : [
             { key: 'home' as TabKey, label: 'Brief' },
-            { key: 'contribute' as TabKey, label: 'Contribute' },
+            { key: 'tracker' as TabKey, label: 'Tracker' },
           ],
     [mode]
   );
@@ -31,7 +30,6 @@ export default function App() {
   const active = tabs.find((t) => t.key === tab) ? tab : (tabs[0].key as TabKey);
 
   const renderScreen = () => {
-    if (active === 'contribute') return <Contribute />;
     if (active === 'tracker') return <Tracker />;
     return mode === 'patient' ? <PatientCheckIn /> : <SupporterBrief />;
   };

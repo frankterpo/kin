@@ -223,9 +223,61 @@ export function VoiceLane({
           const x = (c.hour / hours) * width;
           const y = height / 2 - ((c.mood - 70) / 30) * 10;
           const r = hours <= 24 ? 5 : hours <= 168 ? 3 : 2;
-          return (
+          const isSupporter = c.source === 'supporter';
+          return isSupporter ? (
+            <Circle
+              key={i}
+              cx={x}
+              cy={y}
+              r={r}
+              fill="none"
+              stroke={palette.accent}
+              strokeWidth={1.4}
+              opacity={0.9}
+            />
+          ) : (
             <Circle key={i} cx={x} cy={y} r={r} fill={palette.accent} opacity={0.9} />
           );
+        })}
+      </Svg>
+    </View>
+  );
+}
+
+// ───────────────────────── Concordance strip ─────────────────────────
+
+const CONCORD_COLORS: Record<NonNullable<CheckIn['concordance']>, string> = {
+  aligned: '#7ad28a',  // soft green
+  mild: '#ffd27a',     // accent gold
+  gap: '#e36b7a',      // muted red
+};
+
+export function ConcordanceLane({
+  width,
+  checkins,
+  hours,
+}: {
+  width: number;
+  checkins: CheckIn[];
+  hours: number;
+}) {
+  const height = 22;
+  return (
+    <View style={{ width, marginTop: 2 }}>
+      <Svg width={width} height={height}>
+        <Line
+          x1={0}
+          y1={height / 2}
+          x2={width}
+          y2={height / 2}
+          stroke={palette.ink}
+          strokeOpacity={0.06}
+        />
+        {checkins.map((c, i) => {
+          const x = (c.hour / hours) * width;
+          const tone = c.concordance ?? 'aligned';
+          const r = hours <= 24 ? 4 : hours <= 168 ? 3 : 2;
+          return <Circle key={i} cx={x} cy={height / 2} r={r} fill={CONCORD_COLORS[tone]} />;
         })}
       </Svg>
     </View>

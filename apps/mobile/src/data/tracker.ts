@@ -4,11 +4,16 @@ export type PlaceSegment = { from: number; to: number; place: Place; label?: str
 
 export type AppSeries = { name: string; mins: number; series: number[] };
 
+export type CheckinSource = 'patient' | 'supporter';
+export type Concordance = 'aligned' | 'mild' | 'gap';
+
 export type CheckIn = {
   hour: number;
   mood: number;
   speech: number;
   tremor: number;
+  source?: CheckinSource;
+  concordance?: Concordance;
 };
 
 export type WindowData = {
@@ -54,9 +59,11 @@ const DAY_HEART = Array.from({ length: 96 }, (_, i) => {
 });
 
 const DAY_CHECKINS: CheckIn[] = [
-  { hour: 8.5, mood: 72, speech: 84, tremor: 0.2 },
-  { hour: 14.4, mood: 71, speech: 88, tremor: 0.3 },
-  { hour: 21.1, mood: 78, speech: 86, tremor: 0.2 },
+  { hour: 8.5, mood: 72, speech: 84, tremor: 0.2, source: 'patient', concordance: 'aligned' },
+  { hour: 11.2, mood: 70, speech: 86, tremor: 0.2, source: 'supporter', concordance: 'aligned' },
+  { hour: 14.4, mood: 71, speech: 88, tremor: 0.3, source: 'patient', concordance: 'mild' },
+  { hour: 17.6, mood: 73, speech: 84, tremor: 0.2, source: 'supporter', concordance: 'aligned' },
+  { hour: 21.1, mood: 78, speech: 86, tremor: 0.2, source: 'patient', concordance: 'gap' },
 ];
 
 export const DAY_WINDOW: WindowData = {
@@ -138,13 +145,24 @@ function buildHeart(days: number): number[] {
 
 function buildCheckins(days: number): CheckIn[] {
   const out: CheckIn[] = [];
+  const concordances: Concordance[] = ['aligned', 'aligned', 'mild', 'aligned', 'gap'];
   for (let d = 0; d < days; d++) {
     const off = d * 24;
     const moodDrift = Math.sin((d / days) * Math.PI * 2) * 8;
-    out.push({ hour: off + 8.5, mood: 70 + moodDrift, speech: 84, tremor: 0.2 });
-    out.push({ hour: off + 14.4, mood: 72 + moodDrift, speech: 86, tremor: 0.3 });
+    out.push({
+      hour: off + 8.5, mood: 70 + moodDrift, speech: 84, tremor: 0.2,
+      source: 'patient', concordance: concordances[d % concordances.length],
+    });
+    out.push({
+      hour: off + 14.4, mood: 72 + moodDrift, speech: 86, tremor: 0.3,
+      source: d % 2 === 0 ? 'patient' : 'supporter',
+      concordance: concordances[(d + 1) % concordances.length],
+    });
     if (d % 4 !== 3) {
-      out.push({ hour: off + 21.0, mood: 76 + moodDrift, speech: 86, tremor: 0.2 });
+      out.push({
+        hour: off + 21.0, mood: 76 + moodDrift, speech: 86, tremor: 0.2,
+        source: 'patient', concordance: concordances[(d + 2) % concordances.length],
+      });
     }
   }
   return out;
