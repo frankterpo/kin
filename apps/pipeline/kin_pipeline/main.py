@@ -13,8 +13,9 @@ import logging
 import time
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 
 from speechmatics.rt import AudioEncoding
 from speechmatics.voice import (
@@ -26,11 +27,15 @@ from speechmatics.voice import (
 )
 from thymia_sentinel import SentinelClient
 
-from .brief import derive_brief
+from . import whatsapp
 from .config import settings
+from .llm import compose_brief
 from .supabase_store import (
     create_checkin,
     finalize_checkin,
+    list_circle_recipients,
+    log_whatsapp_message,
+    profile_by_phone,
     save_biomarker_snapshot,
     upsert_supporter_brief,
 )
@@ -55,6 +60,7 @@ async def health() -> dict[str, Any]:
         "ok": True,
         "sample_rate": s.sample_rate,
         "has_supabase": bool(s.supabase_url and s.supabase_service_role),
+        "has_whatsapp": whatsapp.is_configured(),
     }
 
 
@@ -200,8 +206,12 @@ class CheckinSession:
 
             if self.latest_policy and self.source == "patient":
                 try:
-                    brief = derive_brief(self.latest_policy, transcript)
-                    # NOTE: brief target = demo partner's supporter row, best-effort
+                    brief = await compose_brief(self.latest_policy, transcript)
+                    log.info(
+                        "brief source=%s latency=%sms",
+                        brief.get("_source"),
+                        brief.get("_latency_ms"),
+                    )
                     from .supabase_store import _client
 
                     c = _client()
@@ -219,9 +229,20 @@ class CheckinSession:
                                 supporter_id=sup.data[0]["id"],
                                 headline=brief["headline"],
                                 guidance=brief["guidance"],
-                                tone_cues=brief["tone_cues"],
+                                tone_cues=brief.get("tone_cues") or [],
                                 derived_from=self.checkin_id,
                             )
+
+                    # Fanout to the care circle via WhatsApp (supporters only).
+                    if whatsapp.is_configured():
+                        asyncio.create_task(
+                            _fanout_brief_whatsapp(
+                                circle_id=self.circle_id,
+                                checkin_id=self.checkin_id,
+                                author_id=self.author_id,
+                                brief=brief,
+                            )
+                        )
                 except Exception as e:
                     log.warning("brief upsert failed: %s", e)
 
@@ -259,6 +280,138 @@ class CheckinSession:
         except Exception as e:
             log.exception("pump failed")
             await self.send_json({"type": "error", "where": "pump", "msg": str(e)})
+
+
+async def _fanout_brief_whatsapp(
+    *,
+    circle_id: str,
+    checkin_id: str | None,
+    author_id: str,
+    brief: dict[str, Any],
+) -> None:
+    """Send a supporter brief as text to every circle member with a phone, except
+    the author (usually the patient who just spoke)."""
+    try:
+        recipients = list_circle_recipients(circle_id, exclude_profile_id=author_id)
+        if not recipients:
+            log.info("wa.fanout skipped: no recipients with phones")
+            return
+        headline = brief.get("headline") or ""
+        guidance = brief.get("guidance") or ""
+        cues = brief.get("tone_cues") or []
+        body_parts = [f"Kin: {headline}", "", guidance]
+        if cues:
+            body_parts.append("")
+            body_parts.append("Cues: " + " · ".join(cues))
+        body = "\n".join(body_parts).strip()
+
+        for r in recipients:
+            phone = r["phone_e164"]
+            msg_id = await whatsapp.send_text(phone, body)
+            try:
+                log_whatsapp_message(
+                    direction="outbound",
+                    msg_type="text",
+                    wa_message_id=msg_id,
+                    to_e164=phone,
+                    body=body,
+                    profile_id=r["profile_id"],
+                    circle_id=circle_id,
+                    checkin_id=checkin_id,
+                )
+            except Exception as e:
+                log.warning("wa.log outbound fail: %s", e)
+        log.info("wa.fanout sent count=%d circle=%s", len(recipients), circle_id)
+    except Exception:
+        log.exception("wa.fanout failed")
+
+
+@app.get("/webhook/whatsapp")
+async def whatsapp_verify(request: Request) -> Any:
+    qp = request.query_params
+    mode = qp.get("hub.mode", "")
+    token = qp.get("hub.verify_token", "")
+    challenge = qp.get("hub.challenge", "")
+    ok = whatsapp.verify_challenge(mode, token, challenge)
+    if ok is None:
+        return PlainTextResponse("forbidden", status_code=403)
+    return PlainTextResponse(ok)
+
+
+@app.post("/webhook/whatsapp")
+async def whatsapp_events(request: Request) -> dict[str, Any]:
+    raw = await request.body()
+    if not whatsapp.verify_signature(raw, request.headers.get("x-hub-signature-256")):
+        return {"ok": False, "reason": "bad_signature"}
+    try:
+        payload = json.loads(raw.decode() or "{}")
+    except Exception:
+        payload = {}
+
+    messages = whatsapp.parse_webhook(payload)
+    cfg = settings()
+    for m in messages:
+        sender = m.get("from") or ""
+        profile = profile_by_phone(sender) or {}
+        profile_id = profile.get("id")
+        t = m.get("type")
+        try:
+            log_whatsapp_message(
+                direction="inbound",
+                msg_type=t if t in ("text", "audio", "voice", "image") else "other",
+                wa_message_id=m.get("wa_id"),
+                from_e164=sender,
+                body=m.get("text"),
+                media_id=m.get("audio_id"),
+                media_mime=m.get("mime"),
+                profile_id=profile_id,
+                circle_id=cfg.demo_circle_id,
+                payload=m,
+            )
+        except Exception as e:
+            log.warning("wa.log inbound fail: %s", e)
+
+        # Quick-ack so supporter sees Kin respond live on WhatsApp.
+        if t == "text" and m.get("text"):
+            asyncio.create_task(
+                whatsapp.send_text(
+                    sender,
+                    "Kin: got it — logged for the circle. 🫶",
+                )
+            )
+        elif t in ("audio", "voice"):
+            asyncio.create_task(
+                whatsapp.send_text(
+                    sender,
+                    "Kin: got your voice note — saved as a circle observation.",
+                )
+            )
+    return {"ok": True, "received": len(messages)}
+
+
+@app.post("/whatsapp/fanout_demo")
+async def whatsapp_fanout_demo(body: dict[str, Any]) -> dict[str, Any]:
+    """Manual fanout for rehearsal: POST {message, circle_id?}."""
+    if not whatsapp.is_configured():
+        return {"ok": False, "reason": "whatsapp_not_configured"}
+    cfg = settings()
+    circle_id = body.get("circle_id") or cfg.demo_circle_id
+    text = (body.get("message") or "Kin: hello from the hackathon demo.").strip()
+    recipients = list_circle_recipients(circle_id)
+    sent: list[dict[str, Any]] = []
+    for r in recipients:
+        mid = await whatsapp.send_text(r["phone_e164"], text)
+        log_whatsapp_message(
+            direction="outbound",
+            msg_type="text",
+            wa_message_id=mid,
+            to_e164=r["phone_e164"],
+            body=text,
+            profile_id=r["profile_id"],
+            circle_id=circle_id,
+        )
+        sent.append({"to": r["phone_e164"], "id": mid, "role": r["role"]})
+    return {"ok": True, "sent": sent}
 
 
 @app.websocket("/ws/checkin")

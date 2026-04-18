@@ -15,6 +15,18 @@ class Settings(BaseModel):
     supabase_url: str = os.getenv("SUPABASE_URL", "")
     supabase_service_role: str = os.getenv("SUPABASE_SERVICE_ROLE", "")
 
+    whatsapp_token: str = os.getenv(
+        "META_WHATSAPP_API_KEY",
+        os.getenv("META_WHATAPP_API_KEY", ""),
+    )
+    whatsapp_phone_number_id: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    whatsapp_waba_id: str = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+    whatsapp_verify_token: str = os.getenv(
+        "WHATSAPP_VERIFY_TOKEN", "kin-hackathon-verify-2026"
+    )
+    whatsapp_app_secret: str = os.getenv("META_APP_SECRET", "")
+    whatsapp_graph_version: str = os.getenv("WHATSAPP_GRAPH_VERSION", "v22.0")
+
     sample_rate: int = 16_000
     chunk_size: int = 4_096
 
