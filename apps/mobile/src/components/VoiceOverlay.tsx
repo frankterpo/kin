@@ -40,25 +40,30 @@ const TRANSCRIPTS: Result[] = [
   { transcript: 'Hands a bit stiff, mood is fine. Read the paper.', score: 73 },
 ];
 
-function speak(text: string, onEnd: () => void): () => void {
-  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    try {
-      const utter = new (window as any).SpeechSynthesisUtterance(text);
-      utter.rate = 1.0;
-      utter.pitch = 1.0;
-      utter.volume = 0.9;
-      utter.onend = onEnd;
-      utter.onerror = onEnd;
-      (window as any).speechSynthesis.cancel();
-      (window as any).speechSynthesis.speak(utter);
-      return () => (window as any).speechSynthesis.cancel();
-    } catch {
-      // fall through to fake timing
-    }
+// Fire-and-forget TTS. Returns a cleanup that cancels speech.
+// The component does NOT depend on this for phase progression — a parallel
+// timer always advances the phase so the demo flow runs even if the browser
+// silently blocks audio (autoplay policies, muted device, no voices loaded).
+function speak(text: string): () => void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    return () => {};
   }
-  const ms = Math.max(1400, text.length * 70);
-  const id = setTimeout(onEnd, ms);
-  return () => clearTimeout(id);
+  try {
+    const w = window as any;
+    // Warm voices on first call
+    try { w.speechSynthesis.getVoices(); } catch {}
+    const utter = new w.SpeechSynthesisUtterance(text);
+    utter.rate = 1.0;
+    utter.pitch = 1.0;
+    utter.volume = 1.0;
+    w.speechSynthesis.cancel();
+    w.speechSynthesis.speak(utter);
+    return () => {
+      try { w.speechSynthesis.cancel(); } catch {}
+    };
+  } catch {
+    return () => {};
+  }
 }
 
 export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Props) {
@@ -80,11 +85,17 @@ export function VoiceOverlay({ visible, prompt, onDismiss, duration = 15 }: Prop
     }
   }, [visible, duration]);
 
-  // Phase: speaking — TTS the prompt, then transition to listening
+  // Phase: speaking — fire TTS in parallel; advance on a fixed timer so the
+  // flow continues even if speech is blocked.
   useEffect(() => {
     if (!visible || phase !== 'speaking') return;
-    const cancel = speak(prompt, () => setPhase('listening'));
-    return cancel;
+    const cancelSpeech = speak(prompt);
+    const ms = Math.max(2200, prompt.length * 60);
+    const id = setTimeout(() => setPhase('listening'), ms);
+    return () => {
+      cancelSpeech();
+      clearTimeout(id);
+    };
   }, [visible, phase, prompt]);
 
   // Phase: listening — countdown 15s
