@@ -20,6 +20,7 @@ from typing import Any
 
 import httpx
 
+from .biomarkers import bucket_biomarkers
 from .brief import derive_brief
 
 log = logging.getLogger("kin.llm")
@@ -57,15 +58,6 @@ def _extract_signals(policy_result: dict[str, Any]) -> dict[str, Any]:
     r = policy_result.get("result", policy_result)
     classification = r.get("classification") or {}
     concordance = r.get("concordance_analysis") or {}
-    bio = r.get("biomarkers") or r.get("biomarker_summary") or {}
-
-    def _pick(obj: dict[str, Any], keys: list[str]) -> dict[str, float]:
-        out: dict[str, float] = {}
-        for k in keys:
-            v = obj.get(k)
-            if isinstance(v, (int, float)):
-                out[k] = round(float(v), 2)
-        return out
 
     return {
         "classification": {
@@ -76,20 +68,7 @@ def _extract_signals(policy_result: dict[str, Any]) -> dict[str, Any]:
             "scenario": concordance.get("scenario"),
             "agreement_level": concordance.get("agreement_level"),
         },
-        "biomarkers": {
-            "helios": _pick(
-                bio.get("helios") or {},
-                ["stress", "fatigue", "distress", "energy"],
-            ),
-            "apollo": _pick(
-                bio.get("apollo") or {},
-                ["depression_score", "anxiety_score", "mood"],
-            ),
-            "psyche": _pick(
-                bio.get("psyche") or {},
-                ["valence", "arousal"],
-            ),
-        },
+        "biomarkers": bucket_biomarkers(policy_result),
     }
 
 

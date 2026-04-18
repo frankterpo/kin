@@ -7,6 +7,41 @@ import { useRealtimeData } from "@/lib/useRealtimeData";
 import { Card, DemoShell, Empty, formatTime } from "../_components/DemoShell";
 import { BiomarkerGroup } from "../_components/BiomarkerBar";
 
+function ConcordDot({
+  level,
+}: {
+  level: "aligned" | "mismatch" | "alert" | undefined;
+}) {
+  const cls = level ?? "aligned";
+  const label =
+    cls === "aligned"
+      ? "in sync"
+      : cls === "mismatch"
+        ? "mixed signal"
+        : "needs attention";
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`concord-dot ${cls}`} />
+      <span className="text-[10px] uppercase tracking-wider text-ink/55">
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function biomarkerScenario(
+  bio: { helios?: Record<string, number> | null; apollo?: Record<string, number> | null; psyche?: Record<string, number> | null } | undefined,
+): "aligned" | "mismatch" | "alert" {
+  if (!bio) return "aligned";
+  const all = { ...(bio.helios ?? {}), ...(bio.apollo ?? {}), ...(bio.psyche ?? {}) };
+  const vals = Object.values(all).filter((v) => typeof v === "number") as number[];
+  if (!vals.length) return "aligned";
+  const max = Math.max(...vals);
+  if (max >= 0.7) return "alert";
+  if (max >= 0.5) return "mismatch";
+  return "aligned";
+}
+
 export default function DemoSupporterPage() {
   const router = useRouter();
   const [session, setSession] = useState<DemoSession | null>(null);
@@ -33,104 +68,118 @@ export default function DemoSupporterPage() {
   const latestBio = data.biomarkers.find(
     (b) => b.checkin_id === latestCheckin?.id,
   );
+  const scenario = biomarkerScenario(latestBio);
 
   return (
     <DemoShell
       session={session}
       fixtureMode={data.fixtureMode}
       onToggleFixture={toggleFixture}
+      appTitle="Sofia today"
+      appSubtitle="A quiet update from Kin."
     >
-      <div className="grid gap-5">
-        <Card
-          title="Today's brief"
-          subtitle={latestBrief ? formatTime(latestBrief.created_at) : undefined}
-        >
-          {latestBrief ? (
-            <div>
-              <div className="text-lg font-medium leading-snug">
-                {latestBrief.headline}
-              </div>
-              <p className="mt-3 text-sm leading-relaxed text-white/75">
-                {latestBrief.guidance}
-              </p>
-              {latestBrief.tone_cues?.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-1.5">
-                  {latestBrief.tone_cues.map((t) => (
-                    <span
-                      key={t}
-                      className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300"
-                    >
-                      {t}
-                    </span>
-                  ))}
-                </div>
-              )}
+      <Card
+        title="Today's brief"
+        subtitle={latestBrief ? formatTime(latestBrief.created_at) : undefined}
+        accent={<ConcordDot level={scenario} />}
+      >
+        {latestBrief ? (
+          <div>
+            <div className="text-[14px] font-medium leading-snug text-ink">
+              {latestBrief.headline}
             </div>
-          ) : (
-            <Empty hint="Waiting for a brief from Kin." />
-          )}
-        </Card>
-
-        <Card
-          title="What Sofia said"
-          subtitle={
-            latestCheckin ? formatTime(latestCheckin.started_at) : undefined
-          }
-        >
-          {latestCheckin ? (
-            <p className="text-base leading-relaxed text-white/80">
-              “{latestCheckin.transcript ?? "…"}”
+            <p className="mt-2 text-[12px] leading-relaxed text-ink/75">
+              {latestBrief.guidance}
             </p>
-          ) : (
-            <Empty hint="No check-ins yet today." />
-          )}
-        </Card>
-
-        <Card title="What Kin heard under the words">
-          {latestBio ? (
-            <div>
-              <BiomarkerGroup title="Helios" scores={latestBio.helios} />
-              <BiomarkerGroup title="Apollo" scores={latestBio.apollo} />
-              <BiomarkerGroup title="Psyche" scores={latestBio.psyche} />
-            </div>
-          ) : (
-            <Empty hint="Biomarkers appear after Sofia checks in." />
-          )}
-        </Card>
-
-        <Card
-          title="Add an observation"
-          subtitle="Send a voice note via WhatsApp"
-        >
-          <div className="text-sm text-white/60">
-            Reply to Kin on WhatsApp with a quick voice note. It will show up
-            here and in the network pulse.
-          </div>
-          {data.messages.filter((m) => m.direction === "inbound").length > 0 && (
-            <ul className="mt-4 space-y-2">
-              {data.messages
-                .filter((m) => m.direction === "inbound")
-                .slice(0, 5)
-                .map((m) => (
-                  <li
-                    key={m.id}
-                    className="rounded-lg bg-white/[0.04] px-3 py-2"
+            {latestBrief.tone_cues?.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {latestBrief.tone_cues.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded-full bg-kin-50 px-2 py-0.5 text-[10px] font-medium text-kin-700"
                   >
-                    <div className="flex items-center justify-between text-xs text-white/40">
-                      <span>
-                        {m.from_e164 ?? "unknown"} · {m.msg_type}
-                      </span>
-                      <span>{formatTime(m.created_at)}</span>
-                    </div>
-                    <div className="text-sm text-white/80">
-                      {m.body ?? <em className="text-white/40">voice note</em>}
-                    </div>
-                  </li>
+                    {t}
+                  </span>
                 ))}
-            </ul>
-          )}
-        </Card>
-      </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <Empty hint="Waiting for a brief from Kin." />
+        )}
+      </Card>
+
+      <Card
+        title="What Sofia said"
+        subtitle={
+          latestCheckin ? formatTime(latestCheckin.started_at) : undefined
+        }
+      >
+        {latestCheckin ? (
+          <div className="wa-bg rounded-xl px-3 py-3">
+            <div className="flex justify-start">
+              <div className="wa-bubble wa-bubble-in">
+                <p className="text-[13px] leading-relaxed text-[#111]/85">
+                  “{latestCheckin.transcript ?? "…"}”
+                </p>
+                <div className="wa-meta">
+                  {new Date(latestCheckin.started_at).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <Empty hint="No check-ins yet today." />
+        )}
+      </Card>
+
+      <Card title="Under the words">
+        {latestBio ? (
+          <div>
+            <BiomarkerGroup title="Helios" scores={latestBio.helios} />
+            <BiomarkerGroup title="Apollo" scores={latestBio.apollo} />
+            <BiomarkerGroup title="Psyche" scores={latestBio.psyche} />
+          </div>
+        ) : (
+          <Empty hint="Biomarkers appear after Sofia checks in." />
+        )}
+      </Card>
+
+      <Card
+        title="Add an observation"
+        subtitle="WhatsApp Kin"
+      >
+        <div className="text-[12px] leading-relaxed text-ink/65">
+          Reply to Kin with a quick voice note. It will show up here and in the
+          network pulse.
+        </div>
+        {data.messages.filter((m) => m.direction === "inbound").length > 0 && (
+          <ul className="mt-3 space-y-1.5">
+            {data.messages
+              .filter((m) => m.direction === "inbound")
+              .slice(0, 5)
+              .map((m) => (
+                <li
+                  key={m.id}
+                  className="rounded-lg bg-ink/[0.03] px-2 py-1.5"
+                >
+                  <div className="flex items-center justify-between text-[9px] font-medium uppercase tracking-wider text-ink/45">
+                    <span>
+                      {m.from_e164 ?? "unknown"} · {m.msg_type}
+                    </span>
+                    <span>{formatTime(m.created_at)}</span>
+                  </div>
+                  <div className="text-[12px] text-ink/80">
+                    {m.body ?? <em className="text-ink/40">voice note</em>}
+                  </div>
+                </li>
+              ))}
+          </ul>
+        )}
+      </Card>
     </DemoShell>
   );
 }

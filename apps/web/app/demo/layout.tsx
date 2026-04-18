@@ -6,5 +6,9 @@ export const metadata: Metadata = {
 };
 
 export default function DemoLayout({ children }: { children: React.ReactNode }) {
-  return <div className="min-h-screen bg-[#0b0c0f] text-white">{children}</div>;
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-[#EEE7DC] via-[#F6F4EE] to-[#E8EDE5] text-ink">
+      {children}
+    </div>
+  );
 }

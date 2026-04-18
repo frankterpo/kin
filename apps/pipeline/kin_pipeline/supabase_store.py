@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from supabase import Client, create_client
 
+from .biomarkers import bucket_biomarkers
 from .config import settings
 
 
@@ -70,15 +71,15 @@ def save_biomarker_snapshot(
         return
 
     r = policy_result.get("result", policy_result)
-    bio = r.get("biomarkers", {}) or r.get("biomarker_summary", {}) or {}
+    buckets = bucket_biomarkers(policy_result)
 
     client.table("biomarker_snapshots").insert(
         {
             "checkin_id": checkin_id,
             "t_offset_ms": t_offset_ms,
-            "helios": bio.get("helios"),
-            "apollo": bio.get("apollo"),
-            "psyche": bio.get("psyche"),
+            "helios": buckets.get("helios") or None,
+            "apollo": buckets.get("apollo") or None,
+            "psyche": buckets.get("psyche") or None,
             "policy_result": policy_result,
             "concordance": r.get("concordance_analysis"),
         }
