@@ -38,7 +38,7 @@ jobs:
       - name: Build MVP
         run: npm run build
         env:
-          VITE_BASE_PATH: /high-bar/
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
