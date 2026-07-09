@@ -16,13 +16,13 @@ const FONT_PAIRINGS = [
 ];
 
 // Convert taste vector to design tokens
-export function tokensFromTaste(taste: TasteVector): DesignTokens {
+export function tokensFromTaste(taste: TasteVector, learnedHue?: number): DesignTokens {
   // COLOR MODE
   const colorMode: 'light' | 'dark' = taste.mode > 0.5 ? 'dark' : 'light';
   
   // PALETTE - OKLCH space
   // Calculate hue (we'll use playfulness to shift hue)
-  const primaryHue = taste.playfulness * 360;
+  const primaryHue = learnedHue ?? taste.playfulness * 360;
   
   // Saturation from saturation dimension
   const primarySat = taste.saturation * 0.3; // 0 to 0.3 chroma in OKLCH

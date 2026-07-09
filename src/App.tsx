@@ -14,18 +14,28 @@ import './App.css'
 type Screen = 'intro' | 'deck' | 'mirror'
 type DeckCard = { type: 'inspiration'; data: InspirationCard } | { type: 'variant'; data: VariantCard }
 
+function circularMean(hues: number[]): number {
+  if (!hues.length) return 210
+  const vectors = hues.map((hue) => hue * Math.PI / 180)
+  const x = vectors.reduce((sum, angle) => sum + Math.cos(angle), 0)
+  const y = vectors.reduce((sum, angle) => sum + Math.sin(angle), 0)
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
+}
+
 function App() {
   const [screen, setScreen] = useState<Screen>('intro')
   const [corpus, setCorpus] = useState(SEED_CORPUS)
   const [taste, setTaste] = useState<TasteVector>(initTasteVector)
   const [confidence, setConfidence] = useState<TasteVector>(initConfidence)
   const [liked, setLiked] = useState<TasteVector[]>([])
+  const [likedHues, setLikedHues] = useState<number[]>([])
   const [swipes, setSwipes] = useState<SwipeRecord[]>([])
   const [showTaste, setShowTaste] = useState(false)
   const [showSignals, setShowSignals] = useState(false)
   const [deckKey, setDeckKey] = useState(0)
   const sessionId = useRef(crypto.randomUUID())
-  const tokens = useMemo(() => tokensFromTaste(taste), [taste])
+  const learnedHue = useMemo(() => circularMean(likedHues), [likedHues])
+  const tokens = useMemo(() => tokensFromTaste(taste, learnedHue), [learnedHue, taste])
   const swipeCount = swipes.length
 
   useEffect(() => {
@@ -44,11 +54,11 @@ function App() {
     const shouldVariant = swipeCount >= 8 && (swipeCount >= 12 || swipeCount % 2 === 0)
     if (shouldVariant) {
       const attrs = sampleVariant(taste, confidence, swipeCount > 0 && (swipeCount + 1) % 8 === 0)
-      const data: VariantCard = { id: `variant-${deckKey}`, attrs, tokens: tokensFromTaste(attrs) }
+      const data: VariantCard = { id: `variant-${deckKey}`, attrs, tokens: tokensFromTaste(attrs, learnedHue) }
       return { type: 'variant', data }
     }
     return { type: 'inspiration', data: corpus[swipeCount % corpus.length] }
-  }, [confidence, corpus, deckKey, swipeCount, taste])
+  }, [confidence, corpus, deckKey, learnedHue, swipeCount, taste])
 
   const nextCard = useMemo<DeckCard>(() => {
     const index = (swipeCount + 1) % corpus.length
@@ -59,6 +69,9 @@ function App() {
     const attrs = currentCard.data.attrs
     const nextTaste = updateTaste(taste, attrs, direction, swipeCount)
     const nextLiked = direction === 'left' ? liked : [...liked, attrs]
+    const cardHue = currentCard.type === 'inspiration'
+      ? currentCard.data.hues[0]
+      : currentCard.data.tokens.primaryHue
     const record: SwipeRecord = {
       cardId: currentCard.data.id,
       cardType: currentCard.type,
@@ -68,6 +81,7 @@ function App() {
     }
     setTaste(nextTaste)
     setLiked(nextLiked)
+    if (direction !== 'left' && cardHue !== undefined) setLikedHues((hues) => [...hues, cardHue])
     setConfidence(updateConfidence(nextTaste, nextLiked, confidence))
     setSwipes((items) => [...items, record])
     setDeckKey((key) => key + 1)
@@ -78,6 +92,7 @@ function App() {
     setTaste(initTasteVector())
     setConfidence(initConfidence())
     setLiked([])
+    setLikedHues([])
     setSwipes([])
     setShowTaste(false)
     setDeckKey((key) => key + 1)
@@ -90,23 +105,32 @@ function App() {
   const averageConfidence = Object.values(confidence).reduce((sum, value) => sum + value, 0) / 14
 
   if (screen === 'intro') {
-    const defaultTokens = tokensFromTaste(initTasteVector())
+    const defaultTokens = tokensFromTaste({
+      ...initTasteVector(),
+      saturation: .01,
+      contrast: .22,
+      mode: .05,
+      radius: .66,
+      gradients: 0,
+      ornament: .08,
+      playfulness: 0,
+    })
     return (
       <main className="intro-screen">
         <div className="intro-nav"><div className="brand-mark"><i>TE</i><span>TASTE<br />ENGINE</span></div><small>CURSOR iOS · LONDON</small></div>
         <div className="intro-copy">
-          <motion.span initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>THE DEFAULT</motion.span>
-          <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: .08 }}>
+          <span>THE DEFAULT</span>
+          <h1>
             This is what every<br /><em>AI-built app</em> looks like.
-          </motion.h1>
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: .2 }}>
+          </h1>
+          <p>
             Grey. Rounded. Forgettable. Let’s teach your agent something it can’t invent: <b>your taste.</b>
-          </motion.p>
+          </p>
         </div>
-        <motion.div className="intro-preview" initial={{ opacity: 0, scale: .96, y: 30 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ delay: .14, type: 'spring' }}>
+        <div className="intro-preview">
           <LivePreview tokens={defaultTokens} />
           <div className="slop-stamp">GENERIC SLOP</div>
-        </motion.div>
+        </div>
         <button className="start-button" onClick={() => setScreen('deck')}>Train my taste <ArrowLeft size={17} style={{ transform: 'rotate(180deg)' }} /></button>
       </main>
     )
